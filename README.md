@@ -12,7 +12,7 @@ This repository contains an implementation of a Redis queue in Go. It includes s
 1. Clone the repository:
 
    ```
-   git clone <repository_url>
+   git clone https://github.com/NikhilRyan/go-redis-queue-worker
    ```
 
 2. Install the required dependencies:
