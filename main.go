@@ -2,81 +2,75 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
 
 	"github.com/go-redis/redis/v8"
-)
-
-var (
-	ctx    context.Context
-	cancel context.CancelFunc
+	"go-redis-queue/redisqueue"
 )
 
 func main() {
-	// Create a new Redis client
-	redisClient := NewRedisClient()
+	// Create a new Redis queue
+	rq, err := redisqueue.NewRedisQueue("localhost:6379", "", 0)
+	if err != nil {
+		log.Fatal("Failed to create Redis queue:", err)
+	}
 
-	// Create a context to handle cancellation
-	ctx, cancel = context.WithCancel(context.Background())
+	// Register worker functions for different queues
+	rq.RegisterWorker("queue1", workerFunction1)
+	rq.RegisterWorker("queue2", workerFunction2)
 
-	// Create a wait group to wait for all workers to finish
-	var wg sync.WaitGroup
+	// Start the Redis queue and workers
+	go rq.Start(context.Background())
 
-	// Create a worker
-	worker := NewWorker(redisClient)
-
-	// Start the worker goroutine
-	wg.Add(1)
-	go worker.Start(&wg)
+	// Set up API routes
+	http.HandleFunc("/push", handlePushRequest)
 
 	// Start the API server
-	go startAPIServer(redisClient)
-
-	fmt.Println("Server started.")
-
-	// Wait for termination signal
-	waitForTerminationSignal()
-
-	// Stop the worker
-	cancel()
-	wg.Wait()
-
-	fmt.Println("Server stopped.")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func startAPIServer(redisClient *redis.Client) {
-	http.HandleFunc("/push", func(w http.ResponseWriter, r *http.Request) {
-		task := r.URL.Query().Get("task")
-		if task == "" {
-			http.Error(w, "Missing task parameter", http.StatusBadRequest)
-			return
-		}
+func handlePushRequest(w http.ResponseWriter, r *http.Request) {
+	// Parse the query parameter "task" from the URL
+	task := r.URL.Query().Get("task")
+	if task == "" {
+		http.Error(w, "Missing task parameter", http.StatusBadRequest)
+		return
+	}
 
-		// Push the task to the Redis queue
-		err := redisClient.RPush(ctx, "myqueue", task).Err()
-		if err != nil {
-			log.Println("Failed to push task to Redis queue:", err)
-			http.Error(w, "Failed to push task to Redis queue", http.StatusInternalServerError)
-			return
-		}
-
-		fmt.Fprintf(w, "Task %s pushed to the Redis queue", task)
+	// Create a Redis client to push the task into the queue
+	client := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
 	})
 
-	err := http.ListenAndServe(":8080", nil)
+	// Push the task into the queue
+	err := client.RPush(context.Background(), "queue1", task).Err()
 	if err != nil {
-		log.Fatal("Failed to start API server:", err)
+		http.Error(w, "Failed to push task into the queue", http.StatusInternalServerError)
+		return
 	}
+
+	// Return a success response
+	response := map[string]interface{}{
+		"status":  "success",
+		"message": "Task added to the queue",
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
-func waitForTerminationSignal() {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	<-signals
+func workerFunction1(ctx context.Context, task string) {
+	// Implement the worker function for queue1
+	fmt.Printf("Worker1 processing task from queue1: %s\n", task)
+	// Perform the required task processing logic for queue1
+}
+
+func workerFunction2(ctx context.Context, task string) {
+	// Implement the worker function for queue2
+	fmt.Printf("Worker2 processing task from queue2: %s\n", task)
+	// Perform the required task processing logic for queue2
 }
