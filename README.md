@@ -61,7 +61,3 @@ To stop the program gracefully, send a termination signal to the process. You ca
 ## Customization
 
 Feel free to customize the code according to your requirements. You can add error handling, authentication, or enhance the worker's processing logic.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
